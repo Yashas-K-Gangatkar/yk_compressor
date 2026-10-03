@@ -1,0 +1,7 @@
+*.yk
+*.safetensors
+*.bin
+target/
+__pycache__/
+*.wav
+*.pyc
