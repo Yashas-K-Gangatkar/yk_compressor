@@ -1,7 +1,4 @@
-*.yk
-*.safetensors
+/target/
 *.bin
-target/
-__pycache__/
-*.wav
-*.pyc
+*.safetensors
+*.yk

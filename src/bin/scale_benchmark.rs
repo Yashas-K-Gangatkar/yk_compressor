@@ -46,7 +46,7 @@ impl SpatialIndex {
     }
 }
 
-// Standard Sequential Attention Baseline (O(N) scan)
+// Linear-scan baseline over tokens (NOT transformer attention)
 fn standard_attention_query(tokens: &[ModalityToken], target_embedding: &[u8; 4], target_time: f32, target_modality: u8) -> Vec<usize> {
     let mut results = Vec::new();
     for token in tokens {
@@ -100,8 +100,8 @@ fn main() {
     println!("Search time: {:?}", yk_time);
     println!("Comparisons: 1 (hash lookup)");
 
-    // 4. Standard Sequential Attention (O(N) Baseline)
-    println!("\n--- Standard Sequential Attention (O(N) Baseline) ---");
+    // 4. Linear-scan baseline (NOT attention)
+    println!("\n--- Linear-scan baseline (NOT attention) ---");
     let start = Instant::now();
     let std_results = standard_attention_query(&all_tokens, &needle.embedding, needle.timecode, needle.modality);
     let std_time = start.elapsed();
@@ -152,6 +152,6 @@ fn main() {
     
     if yk_found && yk_time < std_time {
         println!("\n✅ YK-Spatial achieves O(1) retrieval at 100K token scale with 100% accuracy.");
-        println!("   This proves the 3D spatial hash breaks the O(N²) attention wall.");
+        println!("   (Exact-match demo; baseline is a linear scan, not attention.)");
     }
 }
