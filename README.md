@@ -23,6 +23,7 @@ nine benchmark pitfalls we committed ourselves.
 | Z-key probe-time gating | 100% recall, 4.5x faster, 28x fewer candidates | src/bin/zkey_test.rs |
 | Time-range queries | new query type, 100% recall @ 2-4 us | src/bin/zkey_test.rs |
 | Grid-fed attention (learned probe) | 0.0% to 94.9%, 120x fewer comparisons vs full attention | src/bin/grid_attention.rs |
+| Grid-fed at D=768 (590K real) | sketch degrades gracefully (94.5->42.5% recall) where exact tier is 0%; served 42% top-1 @ 494x fewer comparisons; adapted queries break sketches unless geometry preserved | grid_attention_768.py |
 
 ## Documents
 

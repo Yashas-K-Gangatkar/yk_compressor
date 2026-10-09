@@ -5,7 +5,7 @@ Code: https://github.com/Yashas-K-Gangatkar/yk_compressor
 
 ## Abstract
 
-We present a two-tier memory index for multimodal AI systems. Tier 1 is an exact O(1) hash keyed on (semantic digest, modality, time bucket). Tier 2 is an approximate similarity tier — STAIR (Spatio-Temporal Approximate Index with exact Rerank) — built from data-dependent sign sketches, multi-probe bucket search, and exact rerank, in which time (Z) is a first-class key dimension: temporal constraints prune candidates at probe time, and pure time-range queries are expressible. We measure, on real and controlled corpora: (i) the σ-cliff — an exact-match tier falls from 100% to 0% recall under any input perturbation; (ii) recall/latency trade-off curves for the sketch tier; (iii) an honest corpus-scale comparison in which FAISS HNSW (inner-product metric) is superior for pure approximate search (74.3% recall@10 at 109 µs vs our best 58.3% at 2,260 µs on 589,933 embeddings); (iv) a boundary condition for temporal gating (gating preserves 98.5% recall at 4.7× speedup when ground truth is temporally concentrated, and is harmful when it is not); (v) Z-key serving (100% recall at 4.5× speedup and 28× fewer candidates, plus time-range queries); and (vi) a grid-fed attention prototype in which a learned query (trained 0.0% → 94.9% on a 1,280-entry memory) retrieves through the 3D prefilter at 120× fewer comparisons with accuracy statistically limited only by prefilter recall. We additionally document nine benchmark pitfalls — each demonstrated with a measured example from our own earlier, flawed evaluation — that silently corrupt published retrieval comparisons.
+We present a two-tier memory index for multimodal AI systems. Tier 1 is an exact O(1) hash keyed on (semantic digest, modality, time bucket). Tier 2 is an approximate similarity tier — STAIR (Spatio-Temporal Approximate Index with exact Rerank) — built from data-dependent sign sketches, multi-probe bucket search, and exact rerank, in which time (Z) is a first-class key dimension: temporal constraints prune candidates at probe time, and pure time-range queries are expressible. We measure, on real and controlled corpora: (i) the σ-cliff — an exact-match tier falls from 100% to 0% recall under any input perturbation; (ii) recall/latency trade-off curves for the sketch tier; (iii) an honest corpus-scale comparison in which FAISS HNSW (inner-product metric) is superior for pure approximate search (74.3% recall@10 at 109 µs vs our best 58.3% at 2,260 µs on 589,933 embeddings); (iv) a boundary condition for temporal gating (gating preserves 98.5% recall at 4.7× speedup when ground truth is temporally concentrated, and is harmful when it is not); (v) Z-key serving (100% recall at 4.5× speedup and 28× fewer candidates, plus time-range queries); and (vi) a grid-fed attention prototype in which a learned query (trained 0.0% → 94.9% on a 1,280-entry memory) retrieves through the 3D prefilter at 120× fewer comparisons with accuracy limited only by prefilter recall. At real dimensionality (D=768, 589,933 real embeddings) the sketch tier degrades gracefully with input noise (94.5% to 42.5% prefilter recall) where the exact tier is at 0%, and we identify a co-design constraint: discriminatively adapted queries break sketch prefiltration unless query geometry is preserved (Section 8.1). We additionally document nine benchmark pitfalls — each demonstrated with a measured example from our own earlier, flawed evaluation — that silently corrupt published retrieval comparisons.
 
 ## 1. Introduction
 
@@ -17,7 +17,7 @@ This paper makes three contributions of different kinds:
 2. **A mechanism demonstration:** grid-fed attention — a *learned* query, trained end-to-end, retrieving through the 3D prefilter and attending locally (Section 8). This is the first non-circular retrieval result in this research program: the query is a different perturbation of the stored fact, so bit-identical lookup is impossible by construction.
 3. **A post-mortem:** nine pitfalls we ourselves committed in an earlier version of this work, each reproduced and measured (Section 9). We publish them because they are common, silent, and rarely documented with numbers.
 
-**Claims boundary.** We do *not* claim to replace attention, to beat HNSW at approximate search, or to have billion-scale results. One earlier preprint by the author claimed all three; Section 9 retracts those claims with root causes.
+**Claims boundary.** We do *not* claim to replace attention, to beat HNSW at approximate search, or to have billion-scale results. One earlier draft by the author (never submitted) claimed all three; Section 9 retracts those claims with root causes.
 
 ## 2. Design
 
@@ -131,9 +131,25 @@ Prefilter recall: 94.9%. Served accuracy equals prefilter recall exactly — eve
 
 Honest footnotes. (i) On this task the time gate alone preserved accuracy (window-only 100%); the sketch tier's marginal contribution is comparison reduction (83 → 11), not accuracy — the two components are separable and were measured separately. (ii) At toy scale, wall-clock favors full attention (19.5 vs 5.2 µs): probe overhead dominates 32-dimensional dot products. The reduction is in comparisons — the asymptotically meaningful quantity; wall-clock crossover requires realistic dimensionality and memory sizes. (iii) This is a mechanism demonstration on synthetic data — not a language model, and not a claim about production systems.
 
+### 8.1 Real dimensionality: 589,933 x 768 (PyTorch, MPS)
+
+Setup: memory = the full 590K corpus (Section 5); probes = a source embedding plus per-dimension Gaussian noise at sigma in {0.25, 0.5, 1.0} (units: each dimension's own std); adapter W_q (identity init, Adam, weight decay 1e-4) trained on 8,000 probes at sigma=0.5 with softmax cross-entropy over full-memory logits (CE 1.57 at epoch 5 to 0.54 at epoch 30); prefilter = L=4 PCA-32 sketch tables, 20-bit prefix, Hamming radius 2; serving = prefilter, then exact rerank over survivors. Metric here is top-1 accuracy / source containment — NOT recall@10, so these numbers are not directly comparable to Section 5.
+
+| sigma | full raw top-1 | full learned | prefilter recall raw | prefilter recall learned | served raw top-1 | cand/q (learned path) |
+|---|---|---|---|---|---|---|
+| 0.25 | 92.5% | 91.0% | 94.5% | 19.0% | 92.5% | 2,166 |
+| 0.50 | 93.5% | 93.5% | 76.5% | 17.0% | 74.5% | 1,553 |
+| 1.00 | 84.0% | 87.0% | 42.5% | 12.5% | 42.0% | 1,194 |
+
+(a) Graceful degradation vs the cliff. As noise rises, the sketch tier retains 94.5% -> 76.5% -> 42.5% prefilter recall where the exact tier returns nothing at any sigma > 0 (Section 3). Served top-1 at sigma=1.0 is 42.0% using 1,194 comparisons — 494x fewer than full attention (589,933). The two-tier memory fails gradually, which is the property a memory system wants.
+
+(b) The linear adapter has no headroom here. Full-attention accuracy moves at most +3.0 points (sigma=1.0), 0.0 (sigma=0.5), and -1.5 (sigma=0.25). Mechanism: noise is scaled per-dimension by the data's own standard deviation, so signal-to-noise ratio is uniform across dimensions; after per-dimension standardization the retrieval problem is already near linearly optimal under raw dot products, leaving a linear map almost nothing to fix.
+
+(c) Negative result: discriminatively adapted queries are sketch-incompatible. Passing queries through the adapter collapses prefilter recall from 94.5% to 19.0% (sigma=0.25). The adapter is trained only to rank; nothing constrains the adapted query to remain near the embedding manifold the sketch directions were learned from, so its sketch bits decorrelate from stored keys' and it probes the wrong buckets. The effect is invisible at D=32 (Section 8), where the temporal window control dominated. Co-design implication: query adaptation and memory prefiltration must be jointly constrained (e.g., a proximity penalty on ||W_q q - q||, or sketch directions learned jointly with the adapter). We consider this the central open problem of grid-fed attention.
+
 ## 9. Nine pitfalls (a post-mortem)
 
-An earlier preprint by the author reported 12–6,876× speedups with 100% accuracy and billion-scale results. Every headline was an artifact. Each pitfall below is demonstrated with our own measured example; we believe each is common in the literature.
+An earlier draft by the author (never submitted; superseded by this paper) reported 12–6,876× speedups with 100% accuracy and billion-scale results. Every headline was an artifact. Each pitfall below is demonstrated with our own measured example; we believe each is common in the literature.
 
 1. **Bounded-source "corpora."** picsum.photos serves a finite library: our "13,312 real photographs" contained **993 unique images (92.5% duplicates)**.
 2. **Self-retrieval circularity.** Querying with the stored embedding itself proves dictionary lookup, not retrieval.
@@ -156,7 +172,7 @@ L3 is a toy-scale mechanism demonstration (synthetic facts, D=32, single linear 
 - Time as a first-class key is a real, measurable capability: probe-time gating (100% recall, 4.5× faster, 28× fewer candidates) and time-range ranking (a query type similarity indexes cannot express).
 - Temporal gating has a measured boundary condition: helpful iff gate > ground-truth temporal spread.
 - The exact tier's σ-cliff is total (100% → 0%); two-tier composition is therefore necessary, not decorative.
-- Learned probes through a 3D prefilter preserve attention-derived accuracy at two orders of magnitude fewer comparisons, at prototype scale.
+- Learned probes preserve attention accuracy at toy scale (D=32, 120x fewer comparisons); at real dimensionality we measure the co-design constraint: discriminatively adapted queries collapse sketch prefiltration (94.5% to 19.0%) unless query geometry is preserved — the central open problem of grid-fed attention (Section 8.1).
 - At pure approximate search, HNSW is better than our sketch tier, and we say so.
 
 ## References
