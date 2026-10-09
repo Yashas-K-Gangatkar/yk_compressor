@@ -147,6 +147,22 @@ Setup: memory = the full 590K corpus (Section 5); probes = a source embedding pl
 
 (c) Negative result: discriminatively adapted queries are sketch-incompatible. Passing queries through the adapter collapses prefilter recall from 94.5% to 19.0% (sigma=0.25). The adapter is trained only to rank; nothing constrains the adapted query to remain near the embedding manifold the sketch directions were learned from, so its sketch bits decorrelate from stored keys' and it probes the wrong buckets. The effect is invisible at D=32 (Section 8), where the temporal window control dominated. Co-design implication: query adaptation and memory prefiltration must be jointly constrained (e.g., a proximity penalty on ||W_q q - q||, or sketch directions learned jointly with the adapter). We consider this the central open problem of grid-fed attention.
 
+### 8.1 Real dimensionality: 589,933 x 768 (PyTorch, MPS)
+
+Setup: memory = the full 590K corpus (Section 5); probes = a source embedding plus per-dimension Gaussian noise at sigma in {0.25, 0.5, 1.0} (units: each dimension's own std); adapter W_q (identity init, Adam, weight decay 1e-4) trained on 8,000 probes at sigma=0.5 with softmax cross-entropy over full-memory logits (CE 1.57 at epoch 5 to 0.54 at epoch 30); prefilter = L=4 PCA-32 sketch tables, 20-bit prefix, Hamming radius 2; serving = prefilter, then exact rerank over survivors. Metric here is top-1 accuracy / source containment — NOT recall@10, so these numbers are not directly comparable to Section 5.
+
+| sigma | full raw top-1 | full learned | prefilter recall raw | prefilter recall learned | served raw top-1 | cand/q (learned path) |
+|---|---|---|---|---|---|---|
+| 0.25 | 92.5% | 91.0% | 94.5% | 19.0% | 92.5% | 2,166 |
+| 0.50 | 93.5% | 93.5% | 76.5% | 17.0% | 74.5% | 1,553 |
+| 1.00 | 84.0% | 87.0% | 42.5% | 12.5% | 42.0% | 1,194 |
+
+(a) Graceful degradation vs the cliff. As noise rises, the sketch tier retains 94.5% -> 76.5% -> 42.5% prefilter recall where the exact tier returns nothing at any sigma > 0 (Section 3). Served top-1 at sigma=1.0 is 42.0% using 1,194 comparisons — 494x fewer than full attention (589,933). The two-tier memory fails gradually, which is the property a memory system wants.
+
+(b) The linear adapter has no headroom here. Full-attention accuracy moves at most +3.0 points (sigma=1.0), 0.0 (sigma=0.5), and -1.5 (sigma=0.25). Mechanism: noise is scaled per-dimension by the data's own standard deviation, so signal-to-noise ratio is uniform across dimensions; after per-dimension standardization the retrieval problem is already near linearly optimal under raw dot products, leaving a linear map almost nothing to fix.
+
+(c) Negative result: discriminatively adapted queries are sketch-incompatible. Passing queries through the adapter collapses prefilter recall from 94.5% to 19.0% (sigma=0.25). The adapter is trained only to rank; nothing constrains the adapted query to remain near the embedding manifold the sketch directions were learned from, so its sketch bits decorrelate from stored keys' and it probes the wrong buckets. The effect is invisible at D=32 (Section 8), where the temporal window control dominated. Co-design implication: query adaptation and memory prefiltration must be jointly constrained (e.g., a proximity penalty on ||W_q q - q||, or sketch directions learned jointly with the adapter). We consider this the central open problem of grid-fed attention.
+
 ## 9. Nine pitfalls (a post-mortem)
 
 An earlier draft by the author (never submitted; superseded by this paper) reported 12–6,876× speedups with 100% accuracy and billion-scale results. Every headline was an artifact. Each pitfall below is demonstrated with our own measured example; we believe each is common in the literature.
